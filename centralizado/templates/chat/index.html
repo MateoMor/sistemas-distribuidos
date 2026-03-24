@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>💬 Chat WebSocket</title>
+    <title>Chat WebSocket</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -247,13 +247,13 @@
 <!-- ═══════════════ PANTALLA LOGIN ═══════════════ -->
 <div id="login-screen">
     <div class="login-card">
-        <div class="login-icon">💬</div>
+        <div class="login-icon"></div>
         <div class="login-title">Chat WebSocket</div>
         <div class="login-subtitle">Servidor: {{ ws_url }}</div>
 
         <div class="input-group">
             <label for="username-input">Nombre de usuario</label>
-            <input type="text" id="username-input" placeholder="Ej: Mateo"
+            <input type="text" id="username-input" placeholder="Ej: Usuario"
                    autocomplete="off" autofocus maxlength="30">
         </div>
 
@@ -268,7 +268,7 @@
 <div id="chat-screen">
     <div class="chat-header">
         <div class="chat-header-left">
-            <h1>💬 Chat WebSocket</h1>
+            <h1>Chat WebSocket</h1>
         </div>
         <div class="server-info" id="server-info"></div>
     </div>
@@ -279,7 +279,7 @@
         </div>
         <div class="users-panel">
             <div class="users-header">
-                👥 En Línea <span id="user-count">(0)</span>
+                En Línea <span id="user-count">(0)</span>
             </div>
             <div id="users-list"></div>
         </div>
@@ -288,7 +288,7 @@
     <div class="input-bar">
         <input type="text" id="message-input" placeholder="Escribe un mensaje..."
                autocomplete="off" maxlength="1000">
-        <button class="btn-send" onclick="sendMessage()">Enviar ➤</button>
+        <button class="btn-send" onclick="sendMessage()">Enviar</button>
     </div>
 </div>
 
@@ -305,7 +305,7 @@
 
         username = input.value.trim();
         if (!username) {
-            error.textContent = "⚠️ Ingresa un nombre de usuario";
+            error.textContent = "Ingresa un nombre de usuario";
             input.focus();
             return;
         }
@@ -323,7 +323,7 @@
             document.getElementById("login-screen").style.display = "none";
             const chatScreen = document.getElementById("chat-screen");
             chatScreen.style.display = "flex";
-            document.getElementById("server-info").textContent = "🔗 " + WS_URL + "  —  " + username;
+            document.getElementById("server-info").textContent = WS_URL + "  —  " + username;
             document.getElementById("message-input").focus();
         };
 
@@ -333,11 +333,11 @@
         };
 
         socket.onclose = () => {
-            addSystemMessage("⚠️ Conexión cerrada con el servidor");
+            addSystemMessage("Conexión cerrada con el servidor");
         };
 
         socket.onerror = () => {
-            error.textContent = "❌ No se pudo conectar a " + WS_URL;
+            error.textContent = "No se pudo conectar a " + WS_URL;
             btn.disabled = false;
             btn.textContent = "Conectarse";
         };
