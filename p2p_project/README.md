@@ -66,3 +66,40 @@ Si estás en un sistema basado en UNIX te recomendamos definir las variables de 
 - Verifica tener puertos disponibles en tu computadora.
 - Cada instancia de Django debe de correr sobre un puerto distinto (8000, 8001, 8002...).
 - Cada variable `P2P_PORT` debe reflejar un puerto TCP libre distinto (8767, 8768, 8769...).
+
+## Ejecucion rapida (2 nodos conectados en Windows)
+
+En pruebas reales puede pasar que un puerto ya este ocupado. Si aparece `WinError 10048`, cambia a otro par de puertos.
+
+1. Abre dos terminales en `p2p_project` y activa el entorno virtual en ambas:
+   ```powershell
+   .\.venv\Scripts\activate
+   ```
+
+2. Inicia el nodo 1 (Terminal A):
+   ```powershell
+   $env:RUN_MAIN="true"
+   $env:P2P_PORT="8770"
+   python manage.py runserver 8003
+   ```
+
+3. Inicia el nodo 2 (Terminal B):
+   ```powershell
+   $env:RUN_MAIN="true"
+   $env:P2P_PORT="8771"
+   python manage.py runserver 8004
+   ```
+
+4. Verifica que ambos puertos web y P2P esten activos:
+   ```powershell
+   Get-NetTCPConnection -State Listen |
+     Where-Object { $_.LocalPort -in 8003,8004,8770,8771 } |
+     Select-Object LocalAddress,LocalPort,OwningProcess |
+     Sort-Object LocalPort
+   ```
+
+5. Si quieres usar los puertos originales y fallan (por ejemplo 8765), identifica el proceso que los ocupa:
+   ```powershell
+   Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -eq 8765 }
+   ```
+   Luego puedes cerrar ese proceso o elegir otro `P2P_PORT` libre.
