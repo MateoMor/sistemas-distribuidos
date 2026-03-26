@@ -126,6 +126,14 @@
             font-size: 12px; color: rgba(255,255,255,0.7);
             background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 20px;
         }
+        .chat-mode-badge {
+            font-size: 11px; font-weight: 700; color: white;
+            background: rgba(0,0,0,0.3); padding: 4px 12px; border-radius: 20px;
+            margin-left: 12px;
+        }
+        .chat-mode-badge.private {
+            background: rgba(233,69,96,0.4);
+        }
 
         .chat-body {
             display: flex; flex: 1; overflow: hidden;
@@ -192,14 +200,24 @@
             padding: 8px 12px; border-radius: 8px;
             font-size: 13px; font-weight: 500;
             transition: background 0.2s;
+            cursor: pointer;
+            user-select: none;
         }
         .user-item:hover { background: var(--bg-tertiary); }
+        .user-item.active {
+            background: var(--accent2);
+            color: white;
+        }
+        .user-item.active .user-dot {
+            background: rgba(255,255,255,0.8);
+        }
         .user-dot {
             width: 8px; height: 8px; border-radius: 50%;
             background: var(--green); flex-shrink: 0;
             box-shadow: 0 0 6px rgba(46,204,113,0.5);
         }
         .user-you { color: var(--fg-dim); font-weight: 400; font-size: 11px; }
+        .user-item.active .user-you { color: rgba(255,255,255,0.7); }
 
         /* ── INPUT ─────────────────────────────────── */
         .input-bar {
@@ -235,6 +253,16 @@
         }
         .btn-send:active { transform: translateY(0); }
 
+        .btn-back {
+            padding: 14px 18px; font-size: 14px; font-weight: 600;
+            font-family: 'Inter', sans-serif; cursor: pointer;
+            background: var(--bg-tertiary); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 12px;
+            transition: background 0.2s;
+        }
+        .btn-back:hover { background: var(--bg-tertiary); }
+        .btn-back:active { transform: translateY(0); }
+
         /* ── RESPONSIVE ───────────────────────────── */
         @media (max-width: 700px) {
             .users-panel { display: none; }
@@ -268,7 +296,8 @@
 <div id="chat-screen">
     <div class="chat-header">
         <div class="chat-header-left">
-            <h1>Chat WebSocket</h1>
+            <h1>💬 Chat WebSocket</h1>
+            <span id="chat-mode" class="chat-mode-badge">GLOBAL</span>
         </div>
         <div class="server-info" id="server-info"></div>
     </div>
@@ -286,6 +315,7 @@
     </div>
 
     <div class="input-bar">
+        <button id="back-btn" class="btn-back" onclick="backToGlobalChat()" style="display: none;">← Volver</button>
         <input type="text" id="message-input" placeholder="Escribe un mensaje..."
                autocomplete="off" maxlength="1000">
         <button class="btn-send" onclick="sendMessage()">Enviar</button>
@@ -296,6 +326,9 @@
     const WS_URL = "{{ ws_url }}";
     let socket = null;
     let username = "";
+    let chat_mode = "global"; // "global" o "private"
+    let private_recipient = null; // Usuario con el que se está hablando privadamente
+    let private_conversations = {}; // Historial de chats privados: {username: [messages]}
 
     // ── Conectar ────────────────────────────────────
     function connectChat() {
@@ -349,6 +382,13 @@
             addSystemMessage(data.content, data.timestamp);
         } else if (data.type === "message") {
             addChatMessage(data.username, data.content, data.timestamp, data.is_own);
+        } else if (data.type === "private_message") {
+            handlePrivateMessage(data.sender, data.content, data.timestamp);
+        } else if (data.type === "private_message_sent") {
+            if (chat_mode === "private" && private_recipient === data.recipient) {
+                addChatMessage("Tú", data.content, data.timestamp, true, true);
+            }
+            storePrivateMessage(data.recipient, "Tú", data.content, true);
         } else if (data.type === "user_list") {
             updateUserList(data.users);
         }
@@ -363,7 +403,11 @@
         container.scrollTop = container.scrollHeight;
     }
 
-    function addChatMessage(user, content, ts, isOwn) {
+    function addChatMessage(user, content, ts, isOwn, isPrivate = false) {
+        // Solo mostrar si estamos en el modo correcto
+        if (isPrivate && chat_mode !== "private") return;
+        if (!isPrivate && chat_mode !== "global") return;
+
         const container = document.getElementById("messages-container");
         const div = document.createElement("div");
         div.className = "msg msg-chat" + (isOwn ? " own" : "");
@@ -378,6 +422,30 @@
         container.scrollTop = container.scrollHeight;
     }
 
+    function handlePrivateMessage(sender, content, ts) {
+        storePrivateMessage(sender, sender, content, false);
+        
+        // Si estamos hablando con este usuario, mostrar el mensaje
+        if (chat_mode === "private" && private_recipient === sender) {
+            addChatMessage(sender, content, ts, false, true);
+        } else {
+            // Notificar que hay mensaje privado nuevo
+            addSystemMessage(`📨 Mensaje privado de ${sender} (haz clic en su nombre para responder)`);
+        }
+    }
+
+    function storePrivateMessage(user, senderName, content, isSent) {
+        if (!private_conversations[user]) {
+            private_conversations[user] = [];
+        }
+        private_conversations[user].push({
+            sender: senderName,
+            content: content,
+            isSent: isSent,
+            time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+        });
+    }
+
     function updateUserList(users) {
         const list = document.getElementById("users-list");
         const count = document.getElementById("user-count");
@@ -385,10 +453,73 @@
         list.innerHTML = "";
         users.sort().forEach(user => {
             const div = document.createElement("div");
-            div.className = "user-item";
+            div.className = "user-item" + (chat_mode === "private" && private_recipient === user ? " active" : "");
             const youTag = user === username ? ' <span class="user-you">(tú)</span>' : "";
             div.innerHTML = `<div class="user-dot"></div>${escapeHtml(user)}${youTag}`;
+            
+            // Hacer el usuario clickeable para chat privado
+            if (user !== username) {
+                div.onclick = () => openPrivateChat(user);
+            }
+            
             list.appendChild(div);
+        });
+    }
+
+    function openPrivateChat(user) {
+        chat_mode = "private";
+        private_recipient = user;
+        
+        // Actualizar UI
+        updateChatMode();
+        
+        // Limpiar y recargar mensajes privados
+        const container = document.getElementById("messages-container");
+        container.innerHTML = "";
+        
+        // Mostrar historial privado
+        if (private_conversations[user]) {
+            private_conversations[user].forEach(msg => {
+                addChatMessage(msg.sender, msg.content, msg.time, msg.isSent, true);
+            });
+        }
+        
+        // Actualizar lista de usuarios
+        document.querySelectorAll('.user-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        event.target.closest('.user-item')?.classList.add('active');
+        
+        document.getElementById("message-input").focus();
+    }
+
+    function updateChatMode() {
+        const badge = document.getElementById("chat-mode");
+        const backBtn = document.getElementById("back-btn");
+        if (chat_mode === "global") {
+            badge.textContent = "GLOBAL";
+            badge.classList.remove("private");
+            backBtn.style.display = "none";
+        } else {
+            badge.textContent = "PRIVADO con " + escapeHtml(private_recipient);
+            badge.classList.add("private");
+            backBtn.style.display = "block";
+        }
+    }
+
+    function backToGlobalChat() {
+        chat_mode = "global";
+        private_recipient = null;
+        
+        updateChatMode();
+        
+        // Limpiar mensajes
+        const container = document.getElementById("messages-container");
+        container.innerHTML = "";
+        
+        // Limpiar selección de usuario
+        document.querySelectorAll('.user-item').forEach(item => {
+            item.classList.remove('active');
         });
     }
 
@@ -398,7 +529,16 @@
         const content = input.value.trim();
         if (!content || !socket || socket.readyState !== WebSocket.OPEN) return;
 
-        socket.send(JSON.stringify({ type: "message", content: content }));
+        if (chat_mode === "global") {
+            socket.send(JSON.stringify({ type: "message", content: content }));
+        } else if (chat_mode === "private" && private_recipient) {
+            socket.send(JSON.stringify({ 
+                type: "private_message", 
+                recipient: private_recipient,
+                content: content 
+            }));
+        }
+        
         input.value = "";
         input.focus();
     }
@@ -412,6 +552,13 @@
             } else {
                 sendMessage();
             }
+        }
+    });
+
+    // Escape para volver al chat global
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && chat_mode === "private") {
+            backToGlobalChat();
         }
     });
 
