@@ -13,8 +13,8 @@ Este proyecto despliega un chat de arquitectura tradicional, en donde todos los 
    Es altamente recomendable crear un entorno virtual previamente.
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # Para Linux/macOS
-   # .venv\Scripts\activate   # Para Windows
+   #source .venv/bin/activate  # Para Linux/macOS
+   .venv\Scripts\activate   # Para Windows
    pip install -r requirements.txt
    ```
 
