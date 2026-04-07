@@ -10,6 +10,6 @@ def chat_room(request):
     """Renderiza la página principal del chat."""
     ws_host = request.get_host()
     context = {
-        "ws_url": f"ws://{ws_host}/ws/chat/",
+        "ws_url": f"wss://{ws_host}/ws/chat/",
     }
     return render(request, "chat/index.html", context)

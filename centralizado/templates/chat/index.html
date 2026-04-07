@@ -131,13 +131,9 @@
             background: rgba(0,0,0,0.3); padding: 4px 12px; border-radius: 20px;
             margin-left: 12px;
         }
-        .chat-mode-badge.private {
-            background: rgba(233,69,96,0.4);
-        }
+        .chat-mode-badge.private { background: rgba(233,69,96,0.4); }
 
-        .chat-body {
-            display: flex; flex: 1; overflow: hidden;
-        }
+        .chat-body { display: flex; flex: 1; overflow: hidden; }
 
         /* ── MENSAJES ─────────────────────────────── */
         .messages-panel { flex: 1; display: flex; flex-direction: column; }
@@ -147,9 +143,7 @@
         }
         #messages-container::-webkit-scrollbar { width: 6px; }
         #messages-container::-webkit-scrollbar-track { background: transparent; }
-        #messages-container::-webkit-scrollbar-thumb {
-            background: var(--fg-muted); border-radius: 3px;
-        }
+        #messages-container::-webkit-scrollbar-thumb { background: var(--fg-muted); border-radius: 3px; }
 
         .msg { animation: msgIn 0.3s ease; max-width: 100%; }
         @keyframes msgIn {
@@ -163,20 +157,11 @@
         }
 
         .msg-chat { padding: 8px 0; }
-        .msg-chat .msg-header {
-            display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px;
-        }
-        .msg-chat .msg-username {
-            font-weight: 600; font-size: 14px; color: var(--blue);
-        }
+        .msg-chat .msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+        .msg-chat .msg-username { font-weight: 600; font-size: 14px; color: var(--blue); }
         .msg-chat.own .msg-username { color: var(--green); }
-        .msg-chat .msg-time {
-            font-size: 11px; color: var(--fg-muted);
-        }
-        .msg-chat .msg-content {
-            font-size: 14px; line-height: 1.5;
-            color: var(--fg); padding-left: 2px;
-        }
+        .msg-chat .msg-time { font-size: 11px; color: var(--fg-muted); }
+        .msg-chat .msg-content { font-size: 14px; line-height: 1.5; color: var(--fg); padding-left: 2px; }
 
         /* ── PANEL DE USUARIOS ────────────────────── */
         .users-panel {
@@ -199,18 +184,11 @@
             display: flex; align-items: center; gap: 10px;
             padding: 8px 12px; border-radius: 8px;
             font-size: 13px; font-weight: 500;
-            transition: background 0.2s;
-            cursor: pointer;
-            user-select: none;
+            transition: background 0.2s; cursor: pointer; user-select: none;
         }
         .user-item:hover { background: var(--bg-tertiary); }
-        .user-item.active {
-            background: var(--accent2);
-            color: white;
-        }
-        .user-item.active .user-dot {
-            background: rgba(255,255,255,0.8);
-        }
+        .user-item.active { background: var(--accent2); color: white; }
+        .user-item.active .user-dot { background: rgba(255,255,255,0.8); }
         .user-dot {
             width: 8px; height: 8px; border-radius: 50%;
             background: var(--green); flex-shrink: 0;
@@ -234,10 +212,7 @@
             border: 2px solid var(--border); border-radius: 12px;
             outline: none; transition: border-color 0.3s, box-shadow 0.3s;
         }
-        #message-input:focus {
-            border-color: var(--accent2);
-            box-shadow: 0 0 0 3px var(--accent2-glow);
-        }
+        #message-input:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-glow); }
         #message-input::placeholder { color: var(--fg-muted); }
 
         .btn-send {
@@ -247,10 +222,7 @@
             color: white; border: none; border-radius: 12px;
             transition: transform 0.2s, box-shadow 0.2s;
         }
-        .btn-send:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 16px var(--accent-glow);
-        }
+        .btn-send:hover { transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
         .btn-send:active { transform: translateY(0); }
 
         .btn-back {
@@ -260,10 +232,7 @@
             border: 1px solid var(--border); border-radius: 12px;
             transition: background 0.2s;
         }
-        .btn-back:hover { background: var(--bg-tertiary); }
-        .btn-back:active { transform: translateY(0); }
 
-        /* ── RESPONSIVE ───────────────────────────── */
         @media (max-width: 700px) {
             .users-panel { display: none; }
             .login-card { width: 90%; padding: 32px 24px; }
@@ -326,12 +295,69 @@
     const WS_URL = "{{ ws_url }}";
     let socket = null;
     let username = "";
-    let chat_mode = "global"; // "global" o "private"
-    let private_recipient = null; // Usuario con el que se está hablando privadamente
-    let private_conversations = {}; // Historial de chats privados: {username: [messages]}
+    let chat_mode = "global";
+    let private_recipient = null;
+    let private_conversations = {};
+    let global_messages = [];
+
+    // ── Crypto ──────────────────────────────────────
+    let clientPrivateKey = null;
+    let clientPublicKeyPem = null;
+    let serverPublicKey = null;
+
+    async function generateClientKeys() {
+        const keyPair = await window.crypto.subtle.generateKey(
+            {
+                name: "RSA-OAEP",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([1, 0, 1]),
+                hash: "SHA-256"
+            },
+            true,
+            ["encrypt", "decrypt"]
+        );
+        clientPrivateKey = keyPair.privateKey;
+
+        // Exportar llave pública como PEM
+        const exported = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(exported)));
+        clientPublicKeyPem = `-----BEGIN PUBLIC KEY-----\n${b64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
+    }
+
+    async function importServerPublicKey(pem) {
+        const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
+        const binary = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        serverPublicKey = await window.crypto.subtle.importKey(
+            "spki",
+            binary.buffer,
+            { name: "RSA-OAEP", hash: "SHA-256" },
+            false,
+            ["encrypt"]
+        );
+    }
+
+    async function encryptWithServerKey(text) {
+        const encoded = new TextEncoder().encode(text);
+        const encrypted = await window.crypto.subtle.encrypt(
+            { name: "RSA-OAEP" },
+            serverPublicKey,
+            encoded
+        );
+        return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+    }
+
+    async function decryptWithClientKey(b64) {
+        const binary = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        const decrypted = await window.crypto.subtle.decrypt(
+            { name: "RSA-OAEP" },
+            clientPrivateKey,
+            binary
+        );
+        return new TextDecoder().decode(decrypted);
+    }
 
     // ── Conectar ────────────────────────────────────
-    function connectChat() {
+    async function connectChat() {
         const input = document.getElementById("username-input");
         const error = document.getElementById("login-error");
         const btn   = document.getElementById("btn-connect");
@@ -344,25 +370,22 @@
         }
 
         btn.disabled = true;
-        btn.textContent = "Conectando...";
+        btn.textContent = "Generando llaves...";
         error.textContent = "";
 
+        // Generar llaves RSA del cliente antes de conectar
+        await generateClientKeys();
+
+        btn.textContent = "Conectando...";
         socket = new WebSocket(WS_URL);
 
         socket.onopen = () => {
-            socket.send(JSON.stringify({ type: "join", username: username }));
-
-            // Mostrar pantalla de chat
-            document.getElementById("login-screen").style.display = "none";
-            const chatScreen = document.getElementById("chat-screen");
-            chatScreen.style.display = "flex";
-            document.getElementById("server-info").textContent = WS_URL + "  —  " + username;
-            document.getElementById("message-input").focus();
+            // No hacer join todavía — esperar la llave pública del servidor
         };
 
-        socket.onmessage = (event) => {
+        socket.onmessage = async (event) => {
             const data = JSON.parse(event.data);
-            handleMessage(data);
+            await handleMessage(data);
         };
 
         socket.onclose = () => {
@@ -376,25 +399,63 @@
         };
     }
 
-    // ── Manejar mensajes ────────────────────────────
-    function handleMessage(data) {
+    // ── Manejar mensajes entrantes ──────────────────
+    async function handleMessage(data) {
+        // Primer mensaje del servidor: llave pública
+        if (data.type === "server_public_key") {
+            await importServerPublicKey(data.public_key);
+
+            // Ahora sí hacer join enviando nuestra llave pública
+            socket.send(JSON.stringify({
+                type: "join",
+                username: username,
+                public_key: clientPublicKeyPem
+            }));
+
+            // Mostrar pantalla de chat
+            document.getElementById("login-screen").style.display = "none";
+            document.getElementById("chat-screen").style.display = "flex";
+            document.getElementById("server-info").textContent = WS_URL + "  —  " + username;
+            document.getElementById("message-input").focus();
+            return;
+        }
+
         if (data.type === "system") {
             addSystemMessage(data.content, data.timestamp);
         } else if (data.type === "message") {
+            // Descifrar con llave privada del cliente
+            try {
+                data.content = await decryptWithClientKey(data.content);
+            } catch(e) {
+                data.content = "[mensaje no descifrable]";
+            }
             addChatMessage(data.username, data.content, data.timestamp, data.is_own);
         } else if (data.type === "private_message") {
+            // Descifrar mensaje privado
+            try {
+                data.content = await decryptWithClientKey(data.content);
+            } catch(e) {
+                data.content = "[mensaje no descifrable]";
+            }
             handlePrivateMessage(data.sender, data.content, data.timestamp);
         } else if (data.type === "private_message_sent") {
+            // El servidor ya nos devuelve el texto plano de confirmación
             if (chat_mode === "private" && private_recipient === data.recipient) {
                 addChatMessage("Tú", data.content, data.timestamp, true, true);
             }
             storePrivateMessage(data.recipient, "Tú", data.content, true);
         } else if (data.type === "user_list") {
             updateUserList(data.users);
+        } else if (data.type === "error") {
+            addSystemMessage("⚠️ " + data.content, data.timestamp);
         }
     }
 
+    // ── Renderizar mensaje de sistema ───────────────
     function addSystemMessage(content, ts) {
+        if (chat_mode === "global") {
+            global_messages.push({ type: "system", content, ts });
+        }
         const container = document.getElementById("messages-container");
         const div = document.createElement("div");
         div.className = "msg msg-system";
@@ -403,10 +464,14 @@
         container.scrollTop = container.scrollHeight;
     }
 
+    // ── Renderizar mensaje de chat ──────────────────
     function addChatMessage(user, content, ts, isOwn, isPrivate = false) {
-        // Solo mostrar si estamos en el modo correcto
         if (isPrivate && chat_mode !== "private") return;
         if (!isPrivate && chat_mode !== "global") return;
+
+        if (!isPrivate) {
+            global_messages.push({ type: "chat", user, content, ts, isOwn });
+        }
 
         const container = document.getElementById("messages-container");
         const div = document.createElement("div");
@@ -422,30 +487,25 @@
         container.scrollTop = container.scrollHeight;
     }
 
+    // ── Manejar mensaje privado entrante ────────────
     function handlePrivateMessage(sender, content, ts) {
         storePrivateMessage(sender, sender, content, false);
-        
-        // Si estamos hablando con este usuario, mostrar el mensaje
         if (chat_mode === "private" && private_recipient === sender) {
             addChatMessage(sender, content, ts, false, true);
         } else {
-            // Notificar que hay mensaje privado nuevo
             addSystemMessage(`📨 Mensaje privado de ${sender} (haz clic en su nombre para responder)`);
         }
     }
 
     function storePrivateMessage(user, senderName, content, isSent) {
-        if (!private_conversations[user]) {
-            private_conversations[user] = [];
-        }
+        if (!private_conversations[user]) private_conversations[user] = [];
         private_conversations[user].push({
-            sender: senderName,
-            content: content,
-            isSent: isSent,
-            time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+            sender: senderName, content, isSent,
+            time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         });
     }
 
+    // ── Lista de usuarios ───────────────────────────
     function updateUserList(users) {
         const list = document.getElementById("users-list");
         const count = document.getElementById("user-count");
@@ -456,41 +516,62 @@
             div.className = "user-item" + (chat_mode === "private" && private_recipient === user ? " active" : "");
             const youTag = user === username ? ' <span class="user-you">(tú)</span>' : "";
             div.innerHTML = `<div class="user-dot"></div>${escapeHtml(user)}${youTag}`;
-            
-            // Hacer el usuario clickeable para chat privado
-            if (user !== username) {
-                div.onclick = () => openPrivateChat(user);
-            }
-            
+            if (user !== username) div.onclick = () => openPrivateChat(user);
             list.appendChild(div);
         });
     }
 
+    // ── Abrir chat privado ──────────────────────────
     function openPrivateChat(user) {
         chat_mode = "private";
         private_recipient = user;
-        
-        // Actualizar UI
         updateChatMode();
-        
-        // Limpiar y recargar mensajes privados
+
         const container = document.getElementById("messages-container");
         container.innerHTML = "";
-        
-        // Mostrar historial privado
+
         if (private_conversations[user]) {
             private_conversations[user].forEach(msg => {
                 addChatMessage(msg.sender, msg.content, msg.time, msg.isSent, true);
             });
         }
-        
-        // Actualizar lista de usuarios
-        document.querySelectorAll('.user-item').forEach(item => {
-            item.classList.remove('active');
-        });
+
+        document.querySelectorAll('.user-item').forEach(i => i.classList.remove('active'));
         event.target.closest('.user-item')?.classList.add('active');
-        
         document.getElementById("message-input").focus();
+    }
+
+    // ── Volver al chat global ───────────────────────
+    function backToGlobalChat() {
+        chat_mode = "global";
+        private_recipient = null;
+        updateChatMode();
+
+        const container = document.getElementById("messages-container");
+        container.innerHTML = "";
+
+        // Renderizar directo al DOM sin pasar por addChatMessage/addSystemMessage
+        // para no volver a guardar en global_messages y evitar duplicados
+        global_messages.forEach(msg => {
+            const div = document.createElement("div");
+            if (msg.type === "system") {
+                div.className = "msg msg-system";
+                div.textContent = (msg.ts ? `[${msg.ts}] ` : "") + msg.content;
+            } else {
+                div.className = "msg msg-chat" + (msg.isOwn ? " own" : "");
+                div.innerHTML = `
+                    <div class="msg-header">
+                        <span class="msg-username">${escapeHtml(msg.user)}</span>
+                        <span class="msg-time">${msg.ts || ""}</span>
+                    </div>
+                    <div class="msg-content">${escapeHtml(msg.content)}</div>
+                `;
+            }
+            container.appendChild(div);
+        });
+
+        container.scrollTop = container.scrollHeight;
+        document.querySelectorAll('.user-item').forEach(i => i.classList.remove('active'));
     }
 
     function updateChatMode() {
@@ -507,38 +588,25 @@
         }
     }
 
-    function backToGlobalChat() {
-        chat_mode = "global";
-        private_recipient = null;
-        
-        updateChatMode();
-        
-        // Limpiar mensajes
-        const container = document.getElementById("messages-container");
-        container.innerHTML = "";
-        
-        // Limpiar selección de usuario
-        document.querySelectorAll('.user-item').forEach(item => {
-            item.classList.remove('active');
-        });
-    }
-
     // ── Enviar mensaje ──────────────────────────────
-    function sendMessage() {
+    async function sendMessage() {
         const input = document.getElementById("message-input");
         const content = input.value.trim();
         if (!content || !socket || socket.readyState !== WebSocket.OPEN) return;
+        if (!serverPublicKey) return;
 
         if (chat_mode === "global") {
-            socket.send(JSON.stringify({ type: "message", content: content }));
+            const encrypted = await encryptWithServerKey(content);
+            socket.send(JSON.stringify({ type: "message", content: encrypted }));
         } else if (chat_mode === "private" && private_recipient) {
-            socket.send(JSON.stringify({ 
-                type: "private_message", 
+            const encrypted = await encryptWithServerKey(content);
+            socket.send(JSON.stringify({
+                type: "private_message",
                 recipient: private_recipient,
-                content: content 
+                content: encrypted
             }));
         }
-        
+
         input.value = "";
         input.focus();
     }
