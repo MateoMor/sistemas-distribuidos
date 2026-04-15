@@ -141,6 +141,40 @@
       min-width: 150px;
       text-align: right;
     }
+    #incoming-call {
+      display: none;
+      align-items: center;
+      gap: 6px;
+    }
+    #incoming-call-text {
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #accept-btn {
+      background: #16a34a;
+      border-color: #16a34a;
+    }
+    #accept-btn:hover:not(:disabled) {
+      background: #15803d;
+      border-color: #15803d;
+    }
+    #reject-btn {
+      background: #dc2626;
+      border-color: #dc2626;
+    }
+    #reject-btn:hover:not(:disabled) {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
+    .call-btn.off {
+      background: #3f3f46 !important;
+      border-color: #3f3f46 !important;
+      color: #d4d4d8;
+    }
     #video-panel {
       display: none;
       grid-template-columns: repeat(2, minmax(180px, 1fr));
@@ -348,6 +382,13 @@
     <div id="call-controls">
       <button id="call-btn" class="call-btn" onclick="startCall()" disabled>Llamar</button>
       <button id="hangup-btn" class="call-btn" onclick="hangupCall()" disabled>Colgar</button>
+      <button id="mic-btn" class="call-btn" onclick="toggleMic()" disabled>Mic ON</button>
+      <button id="camera-btn" class="call-btn" onclick="toggleCamera()" disabled>Cam ON</button>
+      <div id="incoming-call">
+        <span id="incoming-call-text"></span>
+        <button id="accept-btn" class="call-btn" onclick="acceptIncomingCall()">Aceptar</button>
+        <button id="reject-btn" class="call-btn" onclick="rejectIncomingCall()">Rechazar</button>
+      </div>
       <div id="call-status">Sin llamada</div>
     </div>
   </div>
@@ -386,6 +427,8 @@
   let peerConnection = null;
   let isCallActive = false;
   let activeCallPeer = null;
+  let pendingOffer = null;
+  let pendingCaller = null;
 
   async function loadNodes() {
     const res = await fetch('/nodes/');
@@ -540,14 +583,75 @@
     document.getElementById('call-status').textContent = text;
   }
 
+  function hideIncomingCall() {
+    pendingOffer = null;
+    pendingCaller = null;
+    document.getElementById('incoming-call').style.display = 'none';
+    document.getElementById('incoming-call-text').textContent = '';
+  }
+
+  function showIncomingCall(caller, offerData) {
+    pendingCaller = caller;
+    pendingOffer = offerData;
+    document.getElementById('incoming-call-text').textContent = 'Llamada entrante de ' + caller;
+    document.getElementById('incoming-call').style.display = 'flex';
+    setCallStatus('Llamada entrante...');
+  }
+
+  function updateMediaButtons() {
+    const micBtn = document.getElementById('mic-btn');
+    const camBtn = document.getElementById('camera-btn');
+
+    const audioTrack = localStream ? localStream.getAudioTracks()[0] : null;
+    const videoTrack = localStream ? localStream.getVideoTracks()[0] : null;
+
+    micBtn.disabled = !audioTrack;
+    camBtn.disabled = !videoTrack;
+
+    if (audioTrack) {
+      micBtn.textContent = audioTrack.enabled ? 'Mic ON' : 'Mic OFF';
+      micBtn.classList.toggle('off', !audioTrack.enabled);
+    } else {
+      micBtn.textContent = 'Mic OFF';
+      micBtn.classList.add('off');
+    }
+
+    if (videoTrack) {
+      camBtn.textContent = videoTrack.enabled ? 'Cam ON' : 'Cam OFF';
+      camBtn.classList.toggle('off', !videoTrack.enabled);
+    } else {
+      camBtn.textContent = 'Cam OFF';
+      camBtn.classList.add('off');
+    }
+  }
+
+  function toggleMic() {
+    if (!localStream) return;
+    const track = localStream.getAudioTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    updateMediaButtons();
+  }
+
+  function toggleCamera() {
+    if (!localStream) return;
+    const track = localStream.getVideoTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    updateMediaButtons();
+  }
+
   async function createLocalStream() {
     if (localStream) return localStream;
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     document.getElementById('local-video').srcObject = localStream;
+    updateMediaButtons();
     return localStream;
   }
 
   async function createPeerConnection(peerId) {
+    hideIncomingCall();
+
     if (peerConnection) {
       peerConnection.close();
     }
@@ -560,6 +664,7 @@
 
     const stream = await createLocalStream();
     stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+    updateMediaButtons();
 
     peerConnection.ontrack = (event) => {
       event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
@@ -631,9 +736,47 @@
     endCallUi('Llamada colgada');
   }
 
+  async function acceptIncomingCall() {
+    if (!pendingCaller || !pendingOffer) return;
+
+    try {
+      const caller = pendingCaller;
+      const offer = pendingOffer;
+      if (activeNode !== caller) {
+        selectNode(caller, 'nodo remoto', '?');
+      }
+      await createPeerConnection(caller);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      await sendSignal(caller, 'answer', answer);
+      setCallStatus('Contestando a ' + caller + '...');
+    } catch (err) {
+      console.error(err);
+      endCallUi('Error contestando llamada');
+    }
+  }
+
+  async function rejectIncomingCall() {
+    if (!pendingCaller) {
+      hideIncomingCall();
+      return;
+    }
+
+    const caller = pendingCaller;
+    hideIncomingCall();
+    try {
+      await sendSignal(caller, 'reject', { reason: 'declined' });
+    } catch (err) {
+      console.error(err);
+    }
+    setCallStatus('Llamada rechazada');
+  }
+
   function endCallUi(statusText) {
     isCallActive = false;
     activeCallPeer = null;
+    hideIncomingCall();
     if (peerConnection) {
       peerConnection.ontrack = null;
       peerConnection.onicecandidate = null;
@@ -645,9 +788,15 @@
       remoteStream.getTracks().forEach(track => track.stop());
       remoteStream = null;
     }
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+    }
+    document.getElementById('local-video').srcObject = null;
     document.getElementById('remote-video').srcObject = null;
     document.getElementById('video-panel').style.display = 'none';
     document.getElementById('hangup-btn').disabled = true;
+    updateMediaButtons();
     setCallStatus(statusText || 'Sin llamada');
   }
 
@@ -663,15 +812,14 @@
         await sendSignal(sender, 'busy', { reason: 'in-call' });
         return;
       }
+      if (pendingCaller && pendingCaller !== sender) {
+        await sendSignal(sender, 'busy', { reason: 'ringing-with-other-peer' });
+        return;
+      }
       if (activeNode !== sender) {
         selectNode(sender, 'nodo remoto', '?');
       }
-      await createPeerConnection(sender);
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      await sendSignal(sender, 'answer', answer);
-      setCallStatus('Contestando a ' + sender + '...');
+      showIncomingCall(sender, signalData);
       return;
     }
 
@@ -699,6 +847,11 @@
 
     if (signalType === 'busy') {
       endCallUi('El nodo remoto está en otra llamada');
+      return;
+    }
+
+    if (signalType === 'reject') {
+      endCallUi('El nodo remoto rechazó la llamada');
     }
   }
 
