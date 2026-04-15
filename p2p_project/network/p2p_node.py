@@ -22,6 +22,7 @@ class P2PNode:
         self.known_nodes = {}
         self.peer_public_keys = {}
         self.messages = []
+        self.webrtc_signals = []
         self.loop = None
 
         # Generar par de llaves RSA
@@ -82,6 +83,18 @@ class P2PNode:
                 "text": decrypted_text,
                 "direction": "received"
             })
+
+        elif msg_type == "webrtc_signal":
+            sender = data.get("from")
+            signal_type = data.get("signal_type")
+            signal_data = data.get("signal_data")
+            if sender and signal_type and signal_data is not None:
+                self.webrtc_signals.append({
+                    "from": sender,
+                    "to": self.node_id,
+                    "signal_type": signal_type,
+                    "signal_data": signal_data,
+                })
 
     async def connect_to_new_peer(self, peer_url):
         if peer_url in self.connected_peers:
@@ -163,6 +176,32 @@ class P2PNode:
             self.connected_peers.discard(f"wss://{target_node_id}")
             self.known_nodes.pop(target_node_id, None)
             return {"ok": False, "error": f"Nodo {target_node_id} caído, mensaje descartado"}
+
+    async def send_webrtc_signal(self, target_node_id, signal_type, signal_data):
+        ws = self.connections.get(target_node_id)
+
+        if not ws:
+            ws_url = f"wss://{target_node_id}"
+            result = await self.connect_to_new_peer(ws_url)
+            if not result["ok"]:
+                return {"ok": False, "error": f"Nodo {target_node_id} no disponible"}
+            ws = self.connections.get(target_node_id)
+
+        try:
+            message = json.dumps({
+                "type": "webrtc_signal",
+                "from": self.node_id,
+                "to": target_node_id,
+                "signal_type": signal_type,
+                "signal_data": signal_data,
+            })
+            await ws.send(message)
+            return {"ok": True}
+        except Exception:
+            self.connections.pop(target_node_id, None)
+            self.connected_peers.discard(f"wss://{target_node_id}")
+            self.known_nodes.pop(target_node_id, None)
+            return {"ok": False, "error": f"Nodo {target_node_id} caído, señal descartada"}
 
 
     async def send_status(self):

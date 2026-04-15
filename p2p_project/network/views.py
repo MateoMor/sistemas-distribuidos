@@ -1,7 +1,9 @@
 from django.shortcuts import render
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from . import node_singleton
 import asyncio
+import json
 
 
 def index(request):
@@ -83,3 +85,61 @@ def get_nodes(request):
     if node is None:
         return JsonResponse({"nodes": {}})
     return JsonResponse({"nodes": node.known_nodes})
+
+
+@csrf_exempt
+def send_webrtc_signal(request):
+    node = node_singleton.node_instance
+    if node is None:
+        return JsonResponse({"error": "Nodo no iniciado"}, status=500)
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "JSON inválido"}, status=400)
+
+    target = payload.get("target")
+    signal_type = payload.get("signal_type")
+    signal_data = payload.get("signal_data")
+
+    if not target or not signal_type or signal_data is None:
+        return JsonResponse(
+            {"error": "Faltan target, signal_type o signal_data"},
+            status=400,
+        )
+
+    try:
+        future = asyncio.run_coroutine_threadsafe(
+            node.send_webrtc_signal(target, signal_type, signal_data),
+            node.loop,
+        )
+        result = future.result(timeout=5)
+    except TimeoutError:
+        return JsonResponse({"error": "Timeout"}, status=504)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    if not result.get("ok"):
+        return JsonResponse(result, status=503)
+    return JsonResponse(result)
+
+
+def get_webrtc_signals(request):
+    node = node_singleton.node_instance
+    if node is None:
+        return JsonResponse({"signals": []})
+
+    sender_filter = request.GET.get("from")
+
+    signals = []
+    keep = []
+    for sig in node.webrtc_signals:
+        if sender_filter and sig.get("from") != sender_filter:
+            keep.append(sig)
+            continue
+        signals.append(sig)
+
+    node.webrtc_signals = keep
+    return JsonResponse({"signals": signals})

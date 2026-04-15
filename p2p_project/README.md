@@ -34,7 +34,7 @@ Para probar la comunicación P2P es ideal contar con por lo menos 2 a 3 nodos. D
 5. **Inicia el Segundo Nodo:**
    Abre una segunda terminal, navega a `p2p_project`, asegúrate de activar el entorno virtual, y ejecuta:
    ```cmd
-   set RUN_MAIN=true && set P2P_PORT=8768 && python manage.py runserver 8001
+   set RUN_MAIN=true && set P2P_PORT=8769 && python manage.py runserver 8001
    ```
 
 6. **Inicia un Tercer Nodo (Opcional):**
@@ -45,22 +45,16 @@ Para probar la comunicación P2P es ideal contar con por lo menos 2 a 3 nodos. D
 
 ## Instrucciones de uso para Linux / macOS
 
-Si estás en un sistema basado en UNIX te recomendamos definir las variables de entorno de la siguiente manera (habiéndo activado antes el entorno `.venv`):
+Si estás en un sistema basado en UNIX te recomendamos ejecutar las siguientes líneas (habiéndo activado antes el entorno `.venv`):
 
 - **Nodo 1:**
   ```bash
-  export RUN_MAIN=true
-  export P2P_PORT=8767
-  python manage.py runserver 8000
+  RUN_MAIN=true P2P_PORT=8767 python manage.py runserver 8000
   ```
 - **Nodo 2:**
   ```bash
-  export RUN_MAIN=true
-  export P2P_PORT=8768
-  python manage.py runserver 8001
+  RUN_MAIN=true P2P_PORT=8768 python manage.py runserver 8001
   ```
-
-*(Alternativamente, puedes ejecutarlos en una sola línea como: `RUN_MAIN=true P2P_PORT=8767 python manage.py runserver 8000`)*
 
 ## Recomendaciones Generales P2P
 - Verifica tener puertos disponibles en tu computadora.
