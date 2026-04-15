@@ -87,7 +87,93 @@
       backdrop-filter: blur(10px);
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 16px;
+    }
+    #chat-header-main {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    #call-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .call-btn {
+      padding: 9px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      background: #27272a;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .call-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+    .call-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    #call-btn {
+      background: #16a34a;
+      border-color: #16a34a;
+    }
+    #call-btn:hover:not(:disabled) {
+      background: #15803d;
+      border-color: #15803d;
+    }
+    #hangup-btn {
+      background: #dc2626;
+      border-color: #dc2626;
+    }
+    #hangup-btn:hover:not(:disabled) {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
+    #call-status {
+      font-size: 12px;
+      color: var(--muted);
+      min-width: 150px;
+      text-align: right;
+    }
+    #video-panel {
+      display: none;
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+      gap: 12px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(9, 9, 11, 0.9);
+    }
+    .video-wrap {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      min-height: 160px;
+    }
+    .video-wrap video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      background: #000;
+    }
+    .video-label {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
     #chat-header h2 { font-size: 18px; font-weight: 600; margin: 0; color: #fff; }
     #chat-header p { font-size: 13px; color: var(--muted); margin-top: 4px; margin-bottom: 0; }
@@ -233,6 +319,12 @@
     @media (max-width: 900px) {
       #sidebar { width: 240px; }
       .msg { max-width: 85%; }
+      #video-panel {
+        grid-template-columns: 1fr;
+      }
+      #call-status {
+        display: none;
+      }
     }
   </style>
 </head>
@@ -246,10 +338,28 @@
 
 <div id="chat-panel" style="order: 1;">
   <div id="chat-header">
-    <button id="back-btn" onclick="clearSelection()">X</button>
-    <div>
-      <h2 id="chat-title">Bienvenido</h2>
-      <p id="chat-subtitle">Comienza a interactuar con los nodos de la red</p>
+    <div id="chat-header-main">
+      <button id="back-btn" onclick="clearSelection()">X</button>
+      <div>
+        <h2 id="chat-title">Bienvenido</h2>
+        <p id="chat-subtitle">Comienza a interactuar con los nodos de la red</p>
+      </div>
+    </div>
+    <div id="call-controls">
+      <button id="call-btn" class="call-btn" onclick="startCall()" disabled>Llamar</button>
+      <button id="hangup-btn" class="call-btn" onclick="hangupCall()" disabled>Colgar</button>
+      <div id="call-status">Sin llamada</div>
+    </div>
+  </div>
+
+  <div id="video-panel">
+    <div class="video-wrap">
+      <video id="local-video" autoplay muted playsinline></video>
+      <span class="video-label">Tu cámara</span>
+    </div>
+    <div class="video-wrap">
+      <video id="remote-video" autoplay playsinline></video>
+      <span class="video-label">Nodo remoto</span>
     </div>
   </div>
 
@@ -266,6 +376,16 @@
 <script>
   let activeNode = null;
   let allMessages = [];
+
+  const rtcConfig = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  };
+
+  let localStream = null;
+  let remoteStream = null;
+  let peerConnection = null;
+  let isCallActive = false;
+  let activeCallPeer = null;
 
   async function loadNodes() {
     const res = await fetch('/nodes/');
@@ -303,11 +423,16 @@
   }
 
   function clearSelection() {
+    if (isCallActive) {
+      hangupCall();
+    }
     activeNode = null;
     document.getElementById('chat-title').textContent = 'Bienvenido';
     document.getElementById('chat-subtitle').textContent = 'Comienza a interactuar con los nodos de la red';
     document.getElementById('msg-input').disabled = true;
     document.getElementById('send-btn').disabled = true;
+    document.getElementById('call-btn').disabled = true;
+    document.getElementById('hangup-btn').disabled = true;
     document.getElementById('back-btn').style.display = 'none';
     document.getElementById('chat-box').innerHTML =
       '<div id="no-selection">Conéctate a un nodo para chatear</div>';
@@ -320,6 +445,8 @@
     document.getElementById('chat-subtitle').textContent = `${hostname} · carga ${load}`;
     document.getElementById('msg-input').disabled = false;
     document.getElementById('send-btn').disabled = false;
+    document.getElementById('call-btn').disabled = false;
+    document.getElementById('hangup-btn').disabled = !isCallActive;
     document.getElementById('back-btn').style.display = 'block'; // ← mostrar flecha
     const noSel = document.getElementById('no-selection');
     if (noSel) noSel.style.display = 'none';
@@ -409,17 +536,196 @@
     loadMessages();
   }
 
+  function setCallStatus(text) {
+    document.getElementById('call-status').textContent = text;
+  }
+
+  async function createLocalStream() {
+    if (localStream) return localStream;
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    document.getElementById('local-video').srcObject = localStream;
+    return localStream;
+  }
+
+  async function createPeerConnection(peerId) {
+    if (peerConnection) {
+      peerConnection.close();
+    }
+
+    peerConnection = new RTCPeerConnection(rtcConfig);
+    activeCallPeer = peerId;
+    remoteStream = new MediaStream();
+    document.getElementById('remote-video').srcObject = remoteStream;
+    document.getElementById('video-panel').style.display = 'grid';
+
+    const stream = await createLocalStream();
+    stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+    peerConnection.ontrack = (event) => {
+      event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+    };
+
+    peerConnection.onicecandidate = async (event) => {
+      if (!event.candidate || !activeCallPeer) return;
+      await sendSignal(activeCallPeer, 'ice-candidate', event.candidate);
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
+      if (state === 'connected') {
+        isCallActive = true;
+        document.getElementById('hangup-btn').disabled = false;
+        setCallStatus('En llamada con ' + activeCallPeer);
+      }
+      if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+        endCallUi('Llamada finalizada');
+      }
+    };
+  }
+
+  async function sendSignal(target, signalType, signalData) {
+    const res = await fetch('/webrtc/signal/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target,
+        signal_type: signalType,
+        signal_data: signalData
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'No se pudo enviar señal WebRTC');
+    }
+  }
+
+  async function startCall() {
+    if (!activeNode) return;
+    if (!navigator.mediaDevices || !window.RTCPeerConnection) {
+      setCallStatus('WebRTC no soportado por el navegador');
+      return;
+    }
+
+    try {
+      await createPeerConnection(activeNode);
+      setCallStatus('Llamando a ' + activeNode + '...');
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      await sendSignal(activeNode, 'offer', offer);
+      document.getElementById('hangup-btn').disabled = false;
+    } catch (err) {
+      setCallStatus('Error iniciando llamada');
+      console.error(err);
+      endCallUi('Error iniciando llamada');
+    }
+  }
+
+  async function hangupCall() {
+    if (activeCallPeer) {
+      try {
+        await sendSignal(activeCallPeer, 'hangup', { reason: 'ended' });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    endCallUi('Llamada colgada');
+  }
+
+  function endCallUi(statusText) {
+    isCallActive = false;
+    activeCallPeer = null;
+    if (peerConnection) {
+      peerConnection.ontrack = null;
+      peerConnection.onicecandidate = null;
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.close();
+      peerConnection = null;
+    }
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => track.stop());
+      remoteStream = null;
+    }
+    document.getElementById('remote-video').srcObject = null;
+    document.getElementById('video-panel').style.display = 'none';
+    document.getElementById('hangup-btn').disabled = true;
+    setCallStatus(statusText || 'Sin llamada');
+  }
+
+  async function handleSignal(signal) {
+    const sender = signal.from;
+    const signalType = signal.signal_type;
+    const signalData = signal.signal_data;
+
+    if (!sender) return;
+
+    if (signalType === 'offer') {
+      if (isCallActive && activeCallPeer && activeCallPeer !== sender) {
+        await sendSignal(sender, 'busy', { reason: 'in-call' });
+        return;
+      }
+      if (activeNode !== sender) {
+        selectNode(sender, 'nodo remoto', '?');
+      }
+      await createPeerConnection(sender);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      await sendSignal(sender, 'answer', answer);
+      setCallStatus('Contestando a ' + sender + '...');
+      return;
+    }
+
+    if (signalType === 'answer') {
+      if (!peerConnection) return;
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData));
+      setCallStatus('Conectando llamada...');
+      return;
+    }
+
+    if (signalType === 'ice-candidate') {
+      if (!peerConnection) return;
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(signalData));
+      } catch (err) {
+        console.error('ICE candidate inválido', err);
+      }
+      return;
+    }
+
+    if (signalType === 'hangup') {
+      endCallUi('El otro nodo colgó');
+      return;
+    }
+
+    if (signalType === 'busy') {
+      endCallUi('El nodo remoto está en otra llamada');
+    }
+  }
+
+  async function pollSignals() {
+    try {
+      const res = await fetch('/webrtc/signals/');
+      const data = await res.json();
+      const signals = data.signals || [];
+      for (const signal of signals) {
+        await handleSignal(signal);
+      }
+    } catch (err) {
+      console.error('Error leyendo señales WebRTC', err);
+    }
+  }
+
   document.getElementById('msg-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') sendMsg();
   });
 
-  // polling cada 2s
+  // polling WebRTC cada 1s para señalización
   setInterval(() => {
-    loadNodes();
-    if (activeNode) loadMessages();
-  }, 2000);
+    pollSignals();
+  }, 1000);
 
   loadNodes();
+  pollSignals();
 </script>
 </body>
 </html>
