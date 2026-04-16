@@ -250,6 +250,36 @@
       border-radius: 20px;
       border: 1px solid rgba(239, 68, 68, 0.2);
     }
+    #typing-indicator {
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .typing-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--primary);
+      display: inline-block;
+      animation: typing-bounce 1.2s ease-in-out infinite;
+    }
+
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typing-bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30%           { transform: translateY(-4px); opacity: 1; }
+    }
+
+    .typing-text {
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 4px;
+      font-style: italic;
+      letter-spacing: 0.01em;
+    }
     #chat-input-row {
       padding: 20px 24px;
       border-top: 1px solid var(--line);
@@ -408,6 +438,15 @@
     <div id="no-selection">Conéctate a un nodo para chatear</div>
   </div>
 
+  <div style="min-height: 28px; padding: 0 24px 4px;">
+  <span id="typing-indicator">
+    <span class="typing-dot"></span>
+    <span class="typing-dot"></span>
+    <span class="typing-dot"></span>
+    <span class="typing-text">escribiendo</span>
+  </span>
+</div>
+
   <div id="chat-input-row">
     <input type="text" id="msg-input" placeholder="Escribe tu mensaje aquí..." disabled />
     <button id="send-btn" onclick="sendMsg()" disabled>Enviar</button>
@@ -429,6 +468,7 @@
   let activeCallPeer = null;
   let pendingOffer = null;
   let pendingCaller = null;
+  let lastTypingTime = 0;
 
   async function loadNodes() {
     const res = await fetch('/nodes/');
@@ -555,7 +595,10 @@
   setInterval(() => {
     checkUnread();
     loadNodes();
-    if (activeNode) loadMessages();
+    if (activeNode) {
+      loadMessages();
+      checkTypingStatus(); // <- AÑADIR ESTA LÍNEA AQUÍ
+    }
   }, 2000);
 
   async function sendMsg() {
@@ -871,6 +914,37 @@
   document.getElementById('msg-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') sendMsg();
   });
+
+  document.getElementById('msg-input').addEventListener('input', () => {
+    if (!activeNode) return;
+    
+    const now = Date.now();
+    // Enviar señal máximo una vez cada 2 segundos para no saturar la red o el API
+    if (now - lastTypingTime > 2000) { 
+      fetch(`/typing/send/?target=${encodeURIComponent(activeNode)}`);
+      lastTypingTime = now;
+    }
+  });
+
+  async function checkTypingStatus() {
+    if (!activeNode) return;
+    
+    try {
+      const res = await fetch('/typing/status/');
+      const data = await res.json(); // Se espera algo como: { active_typing: ["ip:puerto", ...] }
+      
+      const typingIndicator = document.getElementById('typing-indicator');
+      
+      // Si el nodo actual está en la lista de los que están escribiendo
+      if (data.active_typing && data.active_typing.includes(activeNode)) {
+        typingIndicator.style.display = 'flex';
+      } else {
+        typingIndicator.style.display = 'none';
+      }
+    } catch (err) {
+      console.error('Error comprobando estado de escritura', err);
+    }
+  }
 
   // polling WebRTC cada 1s para señalización
   setInterval(() => {

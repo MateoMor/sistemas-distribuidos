@@ -1,4 +1,5 @@
 import asyncio
+import time
 import websockets
 import json
 import random
@@ -24,6 +25,7 @@ class P2PNode:
         self.messages = []
         self.webrtc_signals = []
         self.loop = None
+        self.typing_users = {}
 
         # Generar par de llaves RSA
         self.private_key = rsa.generate_private_key(
@@ -63,6 +65,12 @@ class P2PNode:
                     data["public_key"].encode('utf-8')
                 )
 
+        elif msg_type == "typing":
+            sender = data.get("from")
+            if sender:
+                self.typing_users[sender] = time.time()
+                return
+
         elif msg_type == "chat":
             try:
                 encrypted_bytes = base64.b64decode(data["text"])
@@ -95,6 +103,27 @@ class P2PNode:
                     "signal_type": signal_type,
                     "signal_data": signal_data,
                 })
+
+    async def send_typing(self, target_node_id):
+        ws = self.connections.get(target_node_id)
+        if not ws:
+            return {"ok": False}
+        try:
+            # Enviamos un mensaje ligero (sin encriptar, ya que no es sensible)
+            message = json.dumps({
+                "type": "typing",
+                "from": self.node_id,
+                "to": target_node_id
+            })
+            await ws.send(message)
+            return {"ok": True}
+        except Exception:
+            return {"ok": False}
+
+    def get_active_typing(self):
+        now = time.time()
+        # Retorna solo los que enviaron señal hace menos de 3 segundos
+        return [node_id for node_id, t in self.typing_users.items() if now - t < 3]
 
     async def connect_to_new_peer(self, peer_url):
         if peer_url in self.connected_peers:

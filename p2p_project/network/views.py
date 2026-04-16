@@ -143,3 +143,29 @@ def get_webrtc_signals(request):
 
     node.webrtc_signals = keep
     return JsonResponse({"signals": signals})
+
+def send_typing_signal(request):
+    node = node_singleton.node_instance
+    target = request.GET.get("target")
+
+    if node is None or not target:
+        return JsonResponse({"error": "Nodo no iniciado o falta target"}, status=400)
+
+    try:
+        # Ejecutamos el método asíncrono en el hilo del nodo
+        future = asyncio.run_coroutine_threadsafe(
+            node.send_typing(target), node.loop
+        )
+        result = future.result(timeout=5)
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+def get_typing_status(request):
+    node = node_singleton.node_instance
+    if node is None:
+        return JsonResponse({"active_typing": []})
+    
+    # Obtenemos quiénes están escribiendo desde el diccionario limpio
+    active = node.get_active_typing() 
+    return JsonResponse({"active_typing": active})
